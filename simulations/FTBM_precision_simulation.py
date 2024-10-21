@@ -141,14 +141,14 @@ if __name__ == "__main__":
     def _single_peak_fft_jacob(tao_ns, shift_GHz, width_GHz, amplitude, b):
         f = _single_peak_fft(tao_ns, shift_GHz, width_GHz, amplitude, 0)
         ds = -2*np.pi*tao_ns*amplitude * \
-            np.exp(-2*(tao_ns)*width_GHz)*np.sin(2*np.pi*shift_GHz*(tao_ns))
+            np.exp(-np.pi*(tao_ns)*width_GHz)*np.sin(2*np.pi*shift_GHz*(tao_ns))
         dw = -2*(tao_ns)*f
         dA = f/amplitude
         db = np.ones(len(tao_ns))
         return np.stack((ds, dw, dA, db)).T
 
     def _single_peak_fft(tao_ns, shift_GHz, width_GHz, amplitude, b):
-        return amplitude*np.exp(-2*(tao_ns)*width_GHz)*np.cos(2*np.pi*shift_GHz*(tao_ns))+b
+        return amplitude*np.exp(-np.pi*(tao_ns)*width_GHz)*np.cos(2*np.pi*shift_GHz*(tao_ns))+b
 
     def fit_single_peak_spectrum(S, A):
         tao_ns = 2e3*S*np.arange(len(A), dtype=np.float64)/scipy.constants.c
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         tao = 2e3*pos_um/scipy.constants.c
         # amplitude for the envelope; the maximum value is Rayleigh_intensity+1
         A = Rayleigh_intensity + \
-            np.exp(-2*np.abs(tao)*width_GHz)*np.cos(2*np.pi*shift_GHz*tao)
+            _single_peak_fft(tao, shift_GHz, width_GHz, 1, 0)
         return 0.5*(ASE+Rayleigh_intensity+1)+0.5*A*np.cos(4*np.pi*pos_um/wavelength)
 
     # determine the reference phase
