@@ -50,6 +50,9 @@ if __name__ == "__main__":
     # %% simulation parameters and function definition
 
     wavelength = 780.032*1e-3  # um
+    
+    # whether to use a Lorentzian lineshape or the broad one due to finite NA
+    use_broad_lineshape = True
 
     # number of small steps
     n = 5
@@ -68,7 +71,7 @@ if __name__ == "__main__":
 
     # The values for the shift and width are the averages of the experimental values
     shift_H2O = 3.49  # GHz
-    width_H2O = 1.6  # GHz
+    width_H2O = 0.15 if use_broad_lineshape else 1.6  # GHz
 
     # number of repetitions for the Montecarlo simulation
     n_rep = 100
@@ -84,7 +87,7 @@ if __name__ == "__main__":
         I : ndarray
             Intensity (a.u.)
         get_error_on_parameters : Bool
-            Determines if the function should estimate teh errors on the parameters
+            Determines if the function should estimate the errors on the parameters
 
         Returns
         -------
@@ -138,8 +141,8 @@ if __name__ == "__main__":
 
         return popt, perr
 
-    def _single_peak_fft_jacob(tao_ns, shift_GHz, width_GHz, amplitude, b):
-        f = _single_peak_fft(tao_ns, shift_GHz, width_GHz, amplitude, 0)
+    def _single_peak_fft_Lor_jacob(tao_ns, shift_GHz, width_GHz, amplitude, b):
+        f = _single_peak_fft_Lor(tao_ns, shift_GHz, width_GHz, amplitude, 0)
         ds = -2*np.pi*tao_ns*amplitude * \
             np.exp(-np.pi*(tao_ns)*width_GHz)*np.sin(2*np.pi*shift_GHz*(tao_ns))
         dw = -2*(tao_ns)*f
@@ -147,8 +150,27 @@ if __name__ == "__main__":
         db = np.ones(len(tao_ns))
         return np.stack((ds, dw, dA, db)).T
 
-    def _single_peak_fft(tao_ns, shift_GHz, width_GHz, amplitude, b):
+    def _single_peak_fft_Lor(tao_ns, shift_GHz, width_GHz, amplitude, b):
         return amplitude*np.exp(-np.pi*(tao_ns)*width_GHz)*np.cos(2*np.pi*shift_GHz*(tao_ns))+b
+    
+    def _single_peak_fft_broad(tao_ns, shift_GHz, width_GHz, amplitude, b, sigma = 0.18):
+        """
+        The analytical solution of the integral over all the possible angles,
+        in the approximation of small angles around pi/2 and gaussian distribution.
+        sigma is the width of the gaussian distribution of half the scattering angles around pi/4
+        """
+         
+        D = 2*np.pi*width_GHz
+        s = 2*np.pi*shift_GHz
+        
+        A = np.exp( sigma**2*tao_ns**2/2*(D**2-s**2) - D/2*tao_ns)
+        return amplitude*A*np.cos(s*tao_ns-sigma**2*tao_ns**2/2*D*s)+b
+    
+    _single_peak_fft = _single_peak_fft_Lor
+    _single_peak_fft_jacob = _single_peak_fft_Lor_jacob
+    if use_broad_lineshape:
+        _single_peak_fft = _single_peak_fft_broad
+        _single_peak_fft_jacob = None
 
     def fit_single_peak_spectrum(S, A):
         tao_ns = 2e3*S*np.arange(len(A), dtype=np.float64)/scipy.constants.c
@@ -162,7 +184,7 @@ if __name__ == "__main__":
         """
         try:
             popt, _ = curve_fit(_single_peak_fft, tao_ns, A, p0=[
-                                3.5, 0.9, A0, b0], jac=_single_peak_fft_jacob)
+                                shift_H2O, width_H2O, A0, b0], jac=_single_peak_fft_jacob)
         except Exception:
             popt = np.full(4, np.nan)
         return popt[0], popt[1]
@@ -171,7 +193,7 @@ if __name__ == "__main__":
 
     def signal_single_peak(pos_um, shift_GHz, width_GHz, Rayleigh_intensity=0, ASE=0):
         # time delay between the two arms of the Michelson (in ns)
-        tao = 2e3*pos_um/scipy.constants.c
+        tao = np.abs(2e3*pos_um/scipy.constants.c)
         # amplitude for the envelope; the maximum value is Rayleigh_intensity+1
         A = Rayleigh_intensity + \
             _single_peak_fft(tao, shift_GHz, width_GHz, 1, 0)
@@ -361,7 +383,7 @@ if __name__ == "__main__":
     # the factor 2 is due to the definition used in the simulation of number of
     # photons as the maximum (not the average)
     N_experimental = 2 * 0.49*(np.array([149, 207, 334, 532, 948])-100)
-    precision_shift_experimental = np.array([107, 71, 54, 38, 29])
+    precision_shift_experimental = np.array([93, 59, 42, 30, 22])
     fig = add_experimental_points(
         fig, N_experimental, precision_shift_experimental)
 
@@ -373,7 +395,7 @@ if __name__ == "__main__":
                               plot_title=title, xaxis_title="Number of photoelectrons", yaxis_title="Precision (MHz)",
                               legend_title="Camera noise", legend_format='{:.1f}e-')
 
-    precision_width_experimental = np.array([308, 217, 173, 135, 112])
+    precision_width_experimental = np.array([258, 174, 130, 96, 75])
     fig = add_experimental_points(
         fig, N_experimental, precision_width_experimental)
 
@@ -444,7 +466,7 @@ if __name__ == "__main__":
     # fig.show()
 
     # %% precision at different photoelectrons and intensity noise of the laser
-    N_electrons = np.logspace(np.log10(5), 6, 40)
+    N_electrons = np.logspace(np.log10(5), 4, 40)
     intensity_noise = np.logspace(np.log10(0.002), np.log10(0.2), 5)
 
     def func(pos, N_electrons, intensity_noise):
@@ -464,8 +486,8 @@ if __name__ == "__main__":
     fig.show()
     plotly_to_svg(fig, 'shift precision - intensity noise.svg')
 
-    # %% precision at different photoelectrons and number of sampling
-    N_electrons = np.logspace(np.log10(5), 6, 5)
+    # %% precision at different photoelectrons and number of sampling points
+    N_electrons = np.logspace(np.log10(5), 4, 5)
     N_sampling_points = np.round(np.logspace(
         np.log10(10), np.log10(1000), 30)).astype(np.int16)
 
@@ -499,3 +521,39 @@ if __name__ == "__main__":
                               legend_title="Number of<br>Brillouin<br>photoelectrons", legend_format='{:.1f}e-')
     fig.show()
     plotly_to_svg(fig, 'shift precision - sampling points.svg')
+
+    # %% precision at different photoelectrons and number of sampling points (fixed number of photons)
+    N_electrons = np.logspace(np.log10(5), 4, 5)
+    N_sampling_points = np.round(np.logspace(
+        np.log10(10), np.log10(1000), 30)).astype(np.int16)
+
+    def func(pos, N_electrons, _):
+        I = signal_single_peak(pos, shift_H2O, width_H2O)
+        I = rndGenerator.poisson(N_electrons*I).astype(np.float64)
+        return pos, I
+
+    shift_std = np.empty([len(N_electrons), len(N_sampling_points)])
+    width_std = np.empty_like(shift_std)
+
+    shift = np.empty(n_rep)
+    width = np.empty_like(shift)
+    for p1 in tqdm(range(len(N_electrons))):
+        for p2 in range(len(N_sampling_points)):
+            Np = N_sampling_points[p2]
+            Sp = N*S/Np
+            A = np.empty(Np)
+            for i in range(len(shift)):
+                for ld in range(Np):
+                    A[ld] = get_amplitude_at_single_position(
+                        func, N*N_electrons[p1]/Np, Np, Sp*ld)
+
+                shift[i], width[i] = fit_single_peak_spectrum(Sp, A)
+            shift_std[p1, p2] = np.std(shift)
+            width_std[p1, p2] = np.std(width)
+
+    title = "Shift precision vs. Number of sampling points"
+    fig = plot_simulated_data(N_sampling_points, N_electrons, 1e3*shift_std.T, add_linear_fit=False,
+                              plot_title=title, xaxis_title="Number of sampling points", yaxis_title="Precision (MHz)",
+                              legend_title="Number of<br>Brillouin<br>photoelectrons", legend_format='{:.1f}e-')
+    fig.show()
+    plotly_to_svg(fig, 'shift precision - sampling points (fixed photons).svg')
