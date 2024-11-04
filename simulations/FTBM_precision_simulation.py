@@ -53,6 +53,8 @@ if __name__ == "__main__":
     
     # whether to use a Lorentzian lineshape or the broad one due to finite NA
     use_broad_lineshape = True
+    # the standard deviation of the gaussian which represents the angular distribution due to the NA
+    NA_sigma = 0.18
 
     # number of small steps
     n = 5
@@ -153,7 +155,7 @@ if __name__ == "__main__":
     def _single_peak_fft_Lor(tao_ns, shift_GHz, width_GHz, amplitude, b):
         return amplitude*np.exp(-np.pi*(tao_ns)*width_GHz)*np.cos(2*np.pi*shift_GHz*(tao_ns))+b
     
-    def _single_peak_fft_broad(tao_ns, shift_GHz, width_GHz, amplitude, b, sigma = 0.18):
+    def _single_peak_fft_broad(tao_ns, shift_GHz, width_GHz, amplitude, b, sigma = NA_sigma):
         """
         The analytical solution of the integral over all the possible angles,
         in the approximation of small angles around pi/2 and gaussian distribution.
@@ -171,6 +173,16 @@ if __name__ == "__main__":
     if use_broad_lineshape:
         _single_peak_fft = _single_peak_fft_broad
         _single_peak_fft_jacob = None
+        
+    def _calculate_FWHM_broadened_lineshape(shift, width):
+        """
+        Calculate the FWHM of the broadened peak, under the approximation of a Voigt profile,
+        based on the parameters fitted by '_single_peak_fft_broad'
+        """
+        # formula for FWHM taken from https://en.wikipedia.org/wiki/Voigt_profile
+        fg = 2.355*NA_sigma*np.sqrt(shift**2-width**2)
+        FWHM = 0.5346*width+np.sqrt(0.2166*width**2+fg**2)
+        return FWHM
 
     def fit_single_peak_spectrum(S, A):
         tao_ns = 2e3*S*np.arange(len(A), dtype=np.float64)/scipy.constants.c
@@ -289,7 +301,7 @@ if __name__ == "__main__":
 
                     shift[i], width[i] = fit_single_peak_spectrum(S, A)
                 shift_std[p1, p2] = np.std(shift)
-                width_std[p1, p2] = np.std(width)
+                width_std[p1, p2] = np.std(_calculate_FWHM_broadened_lineshape(shift, width))
 
         return shift_std, width_std
 
@@ -395,7 +407,7 @@ if __name__ == "__main__":
                               plot_title=title, xaxis_title="Number of photoelectrons", yaxis_title="Precision (MHz)",
                               legend_title="Camera noise", legend_format='{:.1f}e-')
 
-    precision_width_experimental = np.array([258, 174, 130, 96, 75])
+    precision_width_experimental = np.array([143, 97, 72, 54, 42])
     fig = add_experimental_points(
         fig, N_experimental, precision_width_experimental)
 
