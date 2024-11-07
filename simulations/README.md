@@ -1,7 +1,10 @@
 # Simulation for FT-Brillouin microscopy
-This folder contains the script ["FTBM_precision_simulation.py"](FTBM_precision_simulation.py) to generate the simulation plots in [our preprint](https://doi.org/10.48550/arXiv.2409.02092). The details on how the simulation is performed can be found in the main text and "Methods" section.
+This folder contains the script ["FTBM_precision_simulation.py"](FTBM_precision_simulation.py) to generate the simulation plots in [our preprint](https://doi.org/10.48550/arXiv.2409.02092).
+The last cell in ["FTBM_precision_simulation.py"](FTBM_precision_simulation.py) allows to calculate the combined contribution of different noise sources. You can change the amplitude on the different noise sources on lines 623-627.
 
-Additionaly it contains the file ["FTBM_sign_flip_simulation.py"](FTBM_sign_flip_simulation.py) that simulates the effect on the spectrum of a sign flip in the interferogram (to compare it to the calculation in the Supplementary Information).
+The details on how the simulation is performed can be found in the main text and "Methods" section.
+
+Additionaly it contains the file ["FTBM_sign_flip_simulation.py"](FTBM_sign_flip_simulation.py) that simulates the effect on the spectrum of a sign flip in the interferogram (to compare it to the calculation in the SI Note 3).
 
 ## Requirements
 The script requires **numpy** and **scipy** for the computation and **plotly** to generate the plots. **tqdm** is also imported to show the progression of the simulation but it is not strictly required for the simulation.

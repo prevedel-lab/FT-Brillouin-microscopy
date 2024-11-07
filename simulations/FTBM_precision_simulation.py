@@ -50,7 +50,7 @@ if __name__ == "__main__":
     # %% simulation parameters and function definition
 
     wavelength = 780.032*1e-3  # um
-    
+
     # whether to use a Lorentzian lineshape or the broad one due to finite NA
     use_broad_lineshape = True
     # the standard deviation of the gaussian which represents the angular distribution due to the NA
@@ -146,7 +146,8 @@ if __name__ == "__main__":
     def _single_peak_fft_Lor_jacob(tao_ns, shift_GHz, width_GHz, amplitude, b):
         f = _single_peak_fft_Lor(tao_ns, shift_GHz, width_GHz, amplitude, 0)
         ds = -2*np.pi*tao_ns*amplitude * \
-            np.exp(-np.pi*(tao_ns)*width_GHz)*np.sin(2*np.pi*shift_GHz*(tao_ns))
+            np.exp(-np.pi*(tao_ns)*width_GHz) * \
+            np.sin(2*np.pi*shift_GHz*(tao_ns))
         dw = -2*(tao_ns)*f
         dA = f/amplitude
         db = np.ones(len(tao_ns))
@@ -154,26 +155,26 @@ if __name__ == "__main__":
 
     def _single_peak_fft_Lor(tao_ns, shift_GHz, width_GHz, amplitude, b):
         return amplitude*np.exp(-np.pi*(tao_ns)*width_GHz)*np.cos(2*np.pi*shift_GHz*(tao_ns))+b
-    
-    def _single_peak_fft_broad(tao_ns, shift_GHz, width_GHz, amplitude, b, sigma = NA_sigma):
+
+    def _single_peak_fft_broad(tao_ns, shift_GHz, width_GHz, amplitude, b, sigma=NA_sigma):
         """
         The analytical solution of the integral over all the possible angles,
         in the approximation of small angles around pi/2 and gaussian distribution.
         sigma is the width of the gaussian distribution of half the scattering angles around pi/4
         """
-         
+
         D = 2*np.pi*width_GHz
         s = 2*np.pi*shift_GHz
-        
-        A = np.exp( sigma**2*tao_ns**2/2*(D**2-s**2) - D/2*tao_ns)
+
+        A = np.exp(sigma**2*tao_ns**2/2*(D**2-s**2) - D/2*tao_ns)
         return amplitude*A*np.cos(s*tao_ns-sigma**2*tao_ns**2/2*D*s)+b
-    
+
     _single_peak_fft = _single_peak_fft_Lor
     _single_peak_fft_jacob = _single_peak_fft_Lor_jacob
     if use_broad_lineshape:
         _single_peak_fft = _single_peak_fft_broad
         _single_peak_fft_jacob = None
-        
+
     def _calculate_FWHM_broadened_lineshape(shift, width):
         """
         Calculate the FWHM of the broadened peak, under the approximation of a Voigt profile,
@@ -301,7 +302,8 @@ if __name__ == "__main__":
 
                     shift[i], width[i] = fit_single_peak_spectrum(S, A)
                 shift_std[p1, p2] = np.std(shift)
-                width_std[p1, p2] = np.std(_calculate_FWHM_broadened_lineshape(shift, width))
+                width_std[p1, p2] = np.std(
+                    _calculate_FWHM_broadened_lineshape(shift, width))
 
         return shift_std, width_std
 
@@ -569,3 +571,68 @@ if __name__ == "__main__":
                               legend_title="Number of<br>Brillouin<br>photoelectrons", legend_format='{:.1f}e-')
     fig.show()
     plotly_to_svg(fig, 'shift precision - sampling points (fixed photons).svg')
+
+    #%% Combined contribution of different noise sources
+
+    def simulate_precision_with_multiple_parameters(N_electrons, camera_noise,
+                                                    stage_precision, Rayleigh_intensity,
+                                                    intensity_noise, add_shot_noise=True):
+        n_rep = 300
+
+        shift = np.empty(n_rep)
+        width = np.empty_like(shift)
+        A = np.empty(N)
+        for i in range(len(shift)):
+            for ld in range(N):
+                large_displ_um = S*ld
+                pos = rndGenerator.normal(
+                    large_displ_um, pos_err) + s*np.arange(n)
+
+                # add noise sources
+                # stage precision
+                pos = rndGenerator.normal(pos, stage_precision)
+                # Rayleigh intensity
+                I = signal_single_peak(pos, shift_H2O, width_H2O,
+                                       Rayleigh_intensity=Rayleigh_intensity)
+                # intensity noise
+                I = rndGenerator.normal(I, I*intensity_noise)
+                I *= N_electrons
+                # shot noise
+                if add_shot_noise:
+                    I = rndGenerator.poisson(I).astype(np.float64)
+                # camera noise
+                I = rndGenerator.normal(I+5*camera_noise, camera_noise)
+                ####
+
+                # fit a cosine
+                pos_rel = pos - pos[0]
+                popt, perr = fit_cos(pos_rel, I)
+
+                A[ld] = popt[0]
+
+                ref_phase = get_ref_phase(pos)
+                ph_diff = np.angle(np.exp(1j*popt[2])*np.exp(-1j*ref_phase))
+                if np.abs(ph_diff) > np.pi/2:
+                    A[ld] *= -1
+
+            shift[i], width[i] = fit_single_peak_spectrum(S, A)
+        shift_std_MHz = 1e3*np.std(shift)
+        width_std_MHz = 1e3*np.std(width)
+        return shift_std_MHz, width_std_MHz
+
+    N_electrons = 100
+    camera_noise = 1.4  # e-
+    stage_precision = 10e-3  # um
+    Rayleigh_intensity = 1
+    intensity_noise = 1e-2
+
+    n_rep_std = 10
+    shift_std = np.empty(n_rep_std)
+    width_std = np.empty_like(shift_std)
+
+    for i in range(n_rep_std):
+        shift_std[i], width_std[i] = simulate_precision_with_multiple_parameters(N_electrons, camera_noise,
+                                                                                 stage_precision, Rayleigh_intensity, intensity_noise)
+
+    print(f"shift_std: {np.mean(shift_std):.2f}+/-{np.std(shift_std):.2f}MHz \
+          width_std: {np.mean(width_std):.2f}+/-{np.std(width_std):.2f}MHz")
